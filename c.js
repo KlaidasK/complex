@@ -1,51 +1,60 @@
-app.get('/get-workout-progress', async (req, res) => {
-  const { username } = req.query;
+app.get('/get-workout-completions', async (req, res) => {
+  const { username, period } = req.query;
 
-  if (!username) {
-    return res.status(400).json({ success: false, error: 'Username is required' });
+  if (!username || !period) {
+    return res.status(400).json({ success: false, error: 'Username and period are required' });
   }
 
   try {
-    // Fetch all completed workouts for the user
-    const completedWorkouts = await WorkoutStatus.find({
+    let dateRange;
+
+    // Determine the date range based on the period (weekly or monthly)
+    if (period === 'weekly') {
+      const oneWeekAgo = new Date();
+      oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+      dateRange = { $gte: oneWeekAgo };
+    } else if (period === 'monthly') {
+      const oneMonthAgo = new Date();
+      oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
+      dateRange = { $gte: oneMonthAgo };
+    } else {
+      return res.status(400).json({ success: false, error: 'Invalid period' });
+    }
+
+    // Fetch the workout status data with `status: 'Yes'` and populate the workout details
+    const workoutStatuses = await WorkoutStatus.find({
       username: username,
-      status: 'Yes',
-    }).sort({ date: 1 }); // Sort by date in ascending order
+      date: dateRange,
+      status: 'Yes', // Include only workouts marked as completed (status = "Yes")
+    })
+      .populate('workoutId', 'name') // Populate workout name
+      .exec();
 
-    if (!completedWorkouts.length) {
-      return res.json({ success: true, averageWorkoutsPerWeek: 0, totalCompletedWorkouts: 0 });
+    if (!workoutStatuses || workoutStatuses.length === 0) {
+      return res.status(404).json({ success: false, error: 'No workout data found for the specified period' });
     }
 
-    // Group workouts by week
-    const weeklyWorkouts = {};
-    const startOfWeek = (date) => {
-      const d = new Date(date);
-      d.setDate(d.getDate() - d.getDay()); // Set to the start of the week (Sunday)
-      d.setHours(0, 0, 0, 0); // Clear time
-      return d.toISOString();
-    };
-
-    for (const workout of completedWorkouts) {
-      const week = startOfWeek(workout.date);
-      if (!weeklyWorkouts[week]) {
-        weeklyWorkouts[week] = 0;
+    // Count the completions of each workout
+    const workoutCounts = workoutStatuses.reduce((counts, workoutStatus) => {
+      const workoutName = workoutStatus.workoutId.name; // Access the populated workout name
+      if (!counts[workoutName]) {
+        counts[workoutName] = 0;
       }
-      weeklyWorkouts[week]++;
-    }
+      counts[workoutName]++;
+      return counts;
+    }, {});
 
-    // Calculate the average workouts per week
-    const totalWeeks = Object.keys(weeklyWorkouts).length;
-    const totalCompletedWorkouts = completedWorkouts.length;
-    const averageWorkoutsPerWeek = (totalCompletedWorkouts / totalWeeks).toFixed(2);
+    // Prepare the data for the chart
+    const labels = Object.keys(workoutCounts);
+    const data = Object.values(workoutCounts);
 
     return res.json({
       success: true,
-      averageWorkoutsPerWeek: averageWorkoutsPerWeek,
-      totalCompletedWorkouts: totalCompletedWorkouts,
-      weeklyData: weeklyWorkouts,
+      labels: labels,
+      data: data,
     });
   } catch (error) {
-    console.error('Error fetching average workouts per week:', error);
-    return res.status(500).json({ success: false, error: 'Error fetching average workouts per week' });
+    console.error(error);
+    return res.status(500).json({ success: false, error: 'Error fetching workout completion data' });
   }
 });
