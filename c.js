@@ -1,60 +1,85 @@
-app.get('/get-workout-completions', async (req, res) => {
-  const { username, period } = req.query;
+app.get('/get-weekly-nutrients', async (req, res) => {
+  const { username } = req.query;
 
-  if (!username || !period) {
-    return res.status(400).json({ success: false, error: 'Username and period are required' });
+  if (!username) {
+    return res.status(400).json({ success: false, error: 'Username is required' });
+  }
+
+  try {
+    const oneWeekAgo = new Date();
+    oneWeekAgo.setDate(oneWeekAgo.getDate() - 7); // Get date for one week ago
+
+    // Fetch the nutrient logs for the past week
+    const logs = await NutrientLog.find({
+      username: username,
+      date: { $gte: oneWeekAgo },
+    }).sort({ date: 1 });
+
+    // Calculate the weekly averages for protein, carbs, and fats
+    let totalProtein = 0, totalCarbs = 0, totalFat = 0;
+    logs.forEach(log => {
+      totalProtein += log.protein;
+      totalCarbs += log.carbohydrates;
+      totalFat += log.fats;
+    });
+
+    const averageProtein = totalProtein / logs.length;
+    const averageCarbs = totalCarbs / logs.length;
+    const averageFat = totalFat / logs.length;
+
+    return res.json({
+      success: true,
+      averages: {
+        protein: averageProtein,
+        carbs: averageCarbs,
+        fat: averageFat,
+      },
+    });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ success: false, error: 'Error fetching weekly nutrients' });
+  }
+});
+
+app.get('/get-monthly-nutrients', async (req, res) => {
+  const { username } = req.query;
+
+  if (!username) {
+    return res.status(400).json({ success: false, error: 'Username is required' });
   }
 
   try {
-    let dateRange;
+    const oneMonthAgo = new Date();
+    oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);  // Get date for one month ago
 
-    // Determine the date range based on the period (weekly or monthly)
-    if (period === 'weekly') {
-      const oneWeekAgo = new Date();
-      oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
-      dateRange = { $gte: oneWeekAgo };
-    } else if (period === 'monthly') {
-      const oneMonthAgo = new Date();
-      oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
-      dateRange = { $gte: oneMonthAgo };
-    } else {
-      return res.status(400).json({ success: false, error: 'Invalid period' });
-    }
-
-    // Fetch the workout status data with `status: 'Yes'` and populate the workout details
-    const workoutStatuses = await WorkoutStatus.find({
+    // Fetch the nutrient logs for the past month
+    const logs = await NutrientLog.find({
       username: username,
-      date: dateRange,
-      status: 'Yes', // Include only workouts marked as completed (status = "Yes")
-    })
-      .populate('workoutId', 'name') // Populate workout name
-      .exec();
+      date: { $gte: oneMonthAgo },
+    }).sort({ date: 1 });
 
-    if (!workoutStatuses || workoutStatuses.length === 0) {
-      return res.status(404).json({ success: false, error: 'No workout data found for the specified period' });
-    }
+    // Calculate the monthly averages for protein, carbs, and fats
+    let totalProtein = 0, totalCarbs = 0, totalFat = 0;
+    logs.forEach(log => {
+      totalProtein += log.protein;
+      totalCarbs += log.carbohydrates;
+      totalFat += log.fats;
+    });
 
-    // Count the completions of each workout
-    const workoutCounts = workoutStatuses.reduce((counts, workoutStatus) => {
-      const workoutName = workoutStatus.workoutId.name; // Access the populated workout name
-      if (!counts[workoutName]) {
-        counts[workoutName] = 0;
-      }
-      counts[workoutName]++;
-      return counts;
-    }, {});
-
-    // Prepare the data for the chart
-    const labels = Object.keys(workoutCounts);
-    const data = Object.values(workoutCounts);
+    const averageProtein = totalProtein / logs.length;
+    const averageCarbs = totalCarbs / logs.length;
+    const averageFat = totalFat / logs.length;
 
     return res.json({
       success: true,
-      labels: labels,
-      data: data,
+      averages: {
+        protein: averageProtein,
+        carbs: averageCarbs,
+        fat: averageFat,
+      },
     });
   } catch (error) {
     console.error(error);
-    return res.status(500).json({ success: false, error: 'Error fetching workout completion data' });
+    return res.status(500).json({ success: false, error: 'Error fetching monthly nutrients' });
   }
 });
