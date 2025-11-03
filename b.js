@@ -1,119 +1,82 @@
 // SOLID: Single Responsibility - kiekviena funkcija turi vieną aiškią užduotį
 // GRASP: Information Expert - duomenų apdorojimas susitelkęs ties duomenimis
 
-// Helper funkcijos UI atnaujinimui (Single Responsibility)
-function showProgress(progressSection, progressText, message) {
-    progressSection.style.display = "block";
-    progressText.textContent = message;
+// UI funkcijos (Single Responsibility)
+function updateProgressUI(progressSection, progressText, message) {
+    progressSection.style.display = message ? "block" : "none";
+    if (message) progressText.textContent = message;
 }
 
-function hideProgress(progressSection) {
-    progressSection.style.display = "none";
-}
-
-// Duomenų gavimo funkcijos
-async function fetchProgressData(url) {
+// Duomenų gavimo funkcija (DRY principle)
+async function fetchData(url) {
     const response = await fetch(url);
-    if (!response.ok) {
-        throw new Error(`Failed to fetch data from ${url}`);
-    }
+    if (!response.ok) throw new Error(`Failed to fetch data`);
     return response.json();
 }
 
-// Progreso skaičiavimo funkcijos kiekvienam tipui
-function calculateWeightProgress(userData, latestWeightData, isLosing) {
-    const initialWeight = userData.weight;
-    const latestWeight = latestWeightData.weight;
-    const progress = isLosing 
-        ? initialWeight - latestWeight 
-        : latestWeight - initialWeight;
-    
-    const progressText = progress > 0 
-        ? `${progress}kg ${isLosing ? 'lost' : 'gained'}` 
-        : "No progress yet";
-    
-    return `Initial Weight: ${initialWeight}kg, Latest Weight: ${latestWeight}kg, Progress: ${progressText}.`;
+// Formatavimo funkcijos (Information Expert)
+function formatWeight(initial, latest, gained) {
+    const diff = gained ? latest - initial : initial - latest;
+    const status = diff > 0 ? `${diff}kg ${gained ? 'gained' : 'lost'}` : "No progress yet";
+    return `Initial Weight: ${initial}kg, Latest Weight: ${latest}kg, Progress: ${status}.`;
 }
 
-function formatStepProgress(data) {
-    const { initialSteps, latestSteps, progress } = data;
-    const progressText = progress > 0 
-        ? `${progress} steps increased` 
-        : `${Math.abs(progress)} steps decreased`;
-    
-    return `Initial Steps: ${initialSteps}, Latest Steps: ${latestSteps}, Progress: ${progressText}.`;
+function formatSteps(initial, latest, progress) {
+    const direction = progress > 0 ? 'increased' : 'decreased';
+    return `Initial Steps: ${initial}, Latest Steps: ${latest}, Progress: ${Math.abs(progress)} steps ${direction}.`;
 }
 
-function formatCalorieProgress(data) {
-    const { initialCalories, latestCalories, progress } = data;
-    const progressText = progress > 0 
-        ? `${progress} kcal` 
-        : `${Math.abs(progress)} calorie progress`;
-    
-    return `Initial Calories: ${initialCalories} kcal, Latest Calories: ${latestCalories} kcal, Progress: ${progressText}.`;
+function formatCalories(initial, latest, progress) {
+    return `Initial Calories: ${initial} kcal, Latest Calories: ${latest} kcal, Progress: ${Math.abs(progress)} ${progress > 0 ? 'kcal' : 'calorie progress'}.`;
 }
 
-function formatWorkoutProgress(data) {
-    const { averageWorkoutsPerWeek, totalCompletedWorkouts } = data;
-    return `Total completed Workouts: ${totalCompletedWorkouts}, Completed workouts per Week: ${averageWorkoutsPerWeek}`;
+function formatWorkouts(total, avg) {
+    return `Total completed Workouts: ${total}, Completed workouts per Week: ${avg}`;
 }
 
-// Pagrindinės funkcijos kiekvienam tikslui
-async function handleWeightProgress(goal) {
+// Progreso gavėjai
+async function getWeightProgress(isGaining) {
     const userData = await fetchUserData();
-    const latestWeightData = await fetchLatestWeight();
-    
-    if (!userData || !latestWeightData) {
-        return null;
-    }
-    
-    const isLosing = goal === "Lose weight";
-    return calculateWeightProgress(userData, latestWeightData, isLosing);
+    const latestData = await fetchLatestWeight();
+    if (!userData || !latestData) return null;
+    return formatWeight(userData.weight, latestData.weight, isGaining);
 }
 
-async function handleStepProgress(username) {
-    const data = await fetchProgressData(`/get-step-progress?username=${username}`);
-    return data.success ? formatStepProgress(data) : null;
+async function getStepProgress(username) {
+    const data = await fetchData(`/get-step-progress?username=${username}`);
+    if (!data.success) return null;
+    return formatSteps(data.initialSteps, data.latestSteps, data.progress);
 }
 
-async function handleCalorieProgress(username) {
-    const data = await fetchProgressData(`/get-calories-intake?username=${username}`);
-    return data.success ? formatCalorieProgress(data) : null;
+async function getCalorieProgress(username) {
+    const data = await fetchData(`/get-calories-intake?username=${username}`);
+    if (!data.success) return null;
+    return formatCalories(data.initialCalories, data.latestCalories, data.progress);
 }
 
-async function handleWorkoutProgress(username) {
-    const data = await fetchProgressData(`/get-workout-progress?username=${username}`);
-    return data.success ? formatWorkoutProgress(data) : null;
+async function getWorkoutProgress(username) {
+    const data = await fetchData(`/get-workout-progress?username=${username}`);
+    if (!data.success) return null;
+    return formatWorkouts(data.totalCompletedWorkouts, data.averageWorkoutsPerWeek);
 }
 
-// Strategy map (Strategy Pattern be klasių)
-const progressHandlers = {
-    "Lose weight": handleWeightProgress,
-    "Gain weight": handleWeightProgress,
-    "Increase step count": handleStepProgress,
-    "Track daily calories": handleCalorieProgress,
-    "Increase fitness (workout repetition)": handleWorkoutProgress
-};
+// Tikslo apdorojimas (Strategy Pattern)
+async function processGoal(goal, username) {
+    if (goal === "Lose weight") return await getWeightProgress(false);
+    if (goal === "Gain weight") return await getWeightProgress(true);
+    if (goal === "Increase step count") return await getStepProgress(username);
+    if (goal === "Track daily calories") return await getCalorieProgress(username);
+    if (goal === "Increase fitness (workout repetition)") return await getWorkoutProgress(username);
+    return null;
+}
 
 // Pagrindinė funkcija - maksimaliai supaprastinta
 async function displayProgress(goal, username) {
-    const handler = progressHandlers[goal];
-    
-    if (!handler) {
-        hideProgress(progressSection);
-        return;
-    }
-    
     try {
-        const message = await handler(username);
-        
-        if (message) {
-            showProgress(progressSection, progressText, message);
-        } else {
-            hideProgress(progressSection);
-        }
+        const message = await processGoal(goal, username);
+        updateProgressUI(progressSection, progressText, message);
     } catch (error) {
-        console.error(`Error displaying ${goal} progress:`, error);
-        hideProgress(progressSection);
+        console.error(`Error displaying progress:`, error);
+        updateProgressUI(progressSection, progressText, null);
     }
 }
