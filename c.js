@@ -1,85 +1,101 @@
-app.get('/get-weekly-nutrients', async (req, res) => {
-  const { username } = req.query;
+app.post('/log-weight', async (req, res) => {
 
-  if (!username) {
-    return res.status(400).json({ success: false, error: 'Username is required' });
-  }
+  const { username, logDate, weight } = req.body;
 
-  try {
-    const oneWeekAgo = new Date();
-    oneWeekAgo.setDate(oneWeekAgo.getDate() - 7); // Get date for one week ago
+  if (!username || !weight) {
 
-    // Fetch the nutrient logs for the past week
-    const logs = await NutrientLog.find({
-      username: username,
-      date: { $gte: oneWeekAgo },
-    }).sort({ date: 1 });
+    return res.status(400).json({ error: 'Username and weight are required.' });
 
-    // Calculate the weekly averages for protein, carbs, and fats
-    let totalProtein = 0, totalCarbs = 0, totalFat = 0;
-    logs.forEach(log => {
-      totalProtein += log.protein;
-      totalCarbs += log.carbohydrates;
-      totalFat += log.fats;
-    });
-
-    const averageProtein = totalProtein / logs.length;
-    const averageCarbs = totalCarbs / logs.length;
-    const averageFat = totalFat / logs.length;
-
-    return res.json({
-      success: true,
-      averages: {
-        protein: averageProtein,
-        carbs: averageCarbs,
-        fat: averageFat,
-      },
-    });
-  } catch (error) {
-    console.error(error);
-    return res.status(500).json({ success: false, error: 'Error fetching weekly nutrients' });
-  }
-});
-
-app.get('/get-monthly-nutrients', async (req, res) => {
-  const { username } = req.query;
-
-  if (!username) {
-    return res.status(400).json({ success: false, error: 'Username is required' });
   }
 
   try {
-    const oneMonthAgo = new Date();
-    oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);  // Get date for one month ago
 
-    // Fetch the nutrient logs for the past month
-    const logs = await NutrientLog.find({
-      username: username,
-      date: { $gte: oneMonthAgo },
-    }).sort({ date: 1 });
+    // Normalize log date to UTC
 
-    // Calculate the monthly averages for protein, carbs, and fats
-    let totalProtein = 0, totalCarbs = 0, totalFat = 0;
-    logs.forEach(log => {
-      totalProtein += log.protein;
-      totalCarbs += log.carbohydrates;
-      totalFat += log.fats;
+    const weightDate = logDate ? new Date(logDate) : new Date();
+
+    const normalizedDate = new Date(weightDate.setUTCHours(0, 0, 0, 0));
+
+    console.log('Normalized Date:', normalizedDate);
+
+    // Check if a log already exists for the same user and date
+
+    const existingLog = await weightLog.findOne({
+
+      username,
+
+      date: normalizedDate,
+
     });
 
-    const averageProtein = totalProtein / logs.length;
-    const averageCarbs = totalCarbs / logs.length;
-    const averageFat = totalFat / logs.length;
+    if (existingLog) {
 
-    return res.json({
-      success: true,
-      averages: {
-        protein: averageProtein,
-        carbs: averageCarbs,
-        fat: averageFat,
-      },
-    });
+      console.log('Existing Log:', existingLog);
+
+      // Use updateOne to update the log
+
+      const result = await weightLog.
+1
+2
+updateOne
+(
+
+Change this code to not construct database queries directly from user-controlled data.
+
+        { username, date: normalizedDate },  // Find the existing log
+
+        { $set: { weight } }  // Update the weight field
+
+      );
+
+      if (result.nModified === 0) {
+
+        return res.status(400).json({ error: 'Weight value is the same as the existing one. No update needed.' });
+
+      }
+
+      return res.status(200).json({
+
+        success: true,
+
+        message: 'Weight log updated successfully.',
+
+      });
+
+    } else {
+
+      // Create a new log
+
+      const newLog = new weightLog({
+
+        username,
+
+        date: normalizedDate,
+
+        weight,
+
+      });
+
+      const savedLog = await newLog.save();
+
+      return res.status(201).json({
+
+        success: true,
+
+        message: 'Weight log created successfully.',
+
+        savedLog,
+
+      });
+
+    }
+
   } catch (error) {
-    console.error(error);
-    return res.status(500).json({ success: false, error: 'Error fetching monthly nutrients' });
+
+    console.error('Error logging weight:', error);
+
+    return res.status(500).json({ error: 'Server error while logging weight.' });
+
   }
+
 });
