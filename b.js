@@ -1,101 +1,153 @@
-app.post('/log-weight', async (req, res) => {
+// SOLID principai: Single Responsibility - kiekviena klasė/funkcija turi vieną atsakomybę
+// GRASP principai: Information Expert - duomenų apdorojimas perkeltas į atskiras funkcijas
 
-  const { username, logDate, weight } = req.body;
-
-  if (!username || !weight) {
-
-    return res.status(400).json({ error: 'Username and weight are required.' });
-
-  }
-
-  try {
-
-    // Normalize log date to UTC
-
-    const weightDate = logDate ? new Date(logDate) : new Date();
-
-    const normalizedDate = new Date(weightDate.setUTCHours(0, 0, 0, 0));
-
-    console.log('Normalized Date:', normalizedDate);
-
-    // Check if a log already exists for the same user and date
-
-    const existingLog = await weightLog.findOne({
-
-      username,
-
-      date: normalizedDate,
-
-    });
-
-    if (existingLog) {
-
-      console.log('Existing Log:', existingLog);
-
-      // Use updateOne to update the log
-
-      const result = await weightLog.
-1
-2
-updateOne
-(
-
-Change this code to not construct database queries directly from user-controlled data.
-
-        { username, date: normalizedDate },  // Find the existing log
-
-        { $set: { weight } }  // Update the weight field
-
-      );
-
-      if (result.nModified === 0) {
-
-        return res.status(400).json({ error: 'Weight value is the same as the existing one. No update needed.' });
-
-      }
-
-      return res.status(200).json({
-
-        success: true,
-
-        message: 'Weight log updated successfully.',
-
-      });
-
-    } else {
-
-      // Create a new log
-
-      const newLog = new weightLog({
-
-        username,
-
-        date: normalizedDate,
-
-        weight,
-
-      });
-
-      const savedLog = await newLog.save();
-
-      return res.status(201).json({
-
-        success: true,
-
-        message: 'Weight log created successfully.',
-
-        savedLog,
-
-      });
-
+// Strategijos klasės kiekvienam progreso tipui (Strategy Pattern + Single Responsibility)
+class WeightProgressStrategy {
+    constructor(goal) {
+        this.goal = goal;
     }
 
-  } catch (error) {
+    async calculate() {
+        const userData = await fetchUserData();
+        const latestWeightData = await fetchLatestWeight();
 
-    console.error('Error logging weight:', error);
+        if (!userData || !latestWeightData) {
+            return null;
+        }
 
-    return res.status(500).json({ error: 'Server error while logging weight.' });
+        const initialWeight = userData.weight;
+        const latestWeight = latestWeightData.weight;
+        const isLosing = this.goal === "Lose weight";
+        const progress = isLosing 
+            ? initialWeight - latestWeight 
+            : latestWeight - initialWeight;
 
-  }
+        const progressText = progress > 0 
+            ? `${progress}kg ${isLosing ? 'lost' : 'gained'}` 
+            : "No progress yet";
 
-});
+        return `Initial Weight: ${initialWeight}kg, Latest Weight: ${latestWeight}kg, Progress: ${progressText}.`;
+    }
+}
+
+class StepProgressStrategy {
+    async calculate(username) {
+        const response = await fetch(`/get-step-progress?username=${username}`);
+
+        if (!response.ok) {
+            throw new Error('Failed to fetch step progress');
+        }
+
+        const data = await response.json();
+
+        if (!data.success) {
+            return null;
+        }
+
+        const { initialSteps, latestSteps, progress } = data;
+        const progressText = progress > 0 
+            ? `${progress} steps increased` 
+            : `${Math.abs(progress)} steps decreased`;
+
+        return `Initial Steps: ${initialSteps}, Latest Steps: ${latestSteps}, Progress: ${progressText}.`;
+    }
+}
+
+class CalorieProgressStrategy {
+    async calculate(username) {
+        const response = await fetch(`/get-calories-intake?username=${username}`);
+
+        if (!response.ok) {
+            throw new Error('Failed to fetch calorie intake data');
+        }
+
+        const data = await response.json();
+
+        if (!data.success) {
+            return null;
+        }
+
+        const { initialCalories, latestCalories, progress } = data;
+        const progressText = progress > 0 
+            ? `${progress} kcal` 
+            : `${Math.abs(progress)} calorie progress`;
+
+        return `Initial Calories: ${initialCalories} kcal, Latest Calories: ${latestCalories} kcal, Progress: ${progressText}.`;
+    }
+}
+
+class WorkoutProgressStrategy {
+    async calculate(username) {
+        const response = await fetch(`/get-workout-progress?username=${username}`);
+
+        if (!response.ok) {
+            throw new Error('Failed to fetch workout progress data');
+        }
+
+        const data = await response.json();
+
+        if (!data.success) {
+            return null;
+        }
+
+        const { averageWorkoutsPerWeek, totalCompletedWorkouts } = data;
+
+        return `Total completed Workouts: ${totalCompletedWorkouts}, Completed workouts per Week: ${averageWorkoutsPerWeek}`;
+    }
+}
+
+// Factory Pattern - sukuria tinkamą strategiją pagal tikslą
+class ProgressStrategyFactory {
+    static create(goal) {
+        const strategies = {
+            "Lose weight": new WeightProgressStrategy(goal),
+            "Gain weight": new WeightProgressStrategy(goal),
+            "Increase step count": new StepProgressStrategy(),
+            "Track daily calories": new CalorieProgressStrategy(),
+            "Increase fitness (workout repetition)": new WorkoutProgressStrategy()
+        };
+
+        return strategies[goal] || null;
+    }
+}
+
+// UI atnaujinimo logika (Single Responsibility)
+class ProgressDisplay {
+    constructor(progressSection, progressText) {
+        this.progressSection = progressSection;
+        this.progressText = progressText;
+    }
+
+    show(message) {
+        this.progressSection.style.display = "block";
+        this.progressText.textContent = message;
+    }
+
+    hide() {
+        this.progressSection.style.display = "none";
+    }
+}
+
+// Pagrindinė funkcija - dabar daug paprastesnė (sumažinta Cognitive Complexity)
+async function displayProgress(goal, username) {
+    const display = new ProgressDisplay(progressSection, progressText);
+    const strategy = ProgressStrategyFactory.create(goal);
+
+    if (!strategy) {
+        display.hide();
+        return;
+    }
+
+    try {
+        const message = await strategy.calculate(username);
+        
+        if (message) {
+            display.show(message);
+        } else {
+            display.hide();
+        }
+    } catch (error) {
+        console.error(`Error displaying ${goal} progress:`, error);
+        display.hide();
+    }
+}
